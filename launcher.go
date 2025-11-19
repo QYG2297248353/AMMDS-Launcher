@@ -58,6 +58,12 @@ func getAppDir() string {
 	return filepath.Dir(exe)
 }
 
+func getWorkDir() string {
+    dir := filepath.Join(os.Getenv("LOCALAPPDATA"), "AMMDS")
+    os.MkdirAll(dir, 0755)
+    return dir
+}
+
 func getFreePort() int {
 	l, err := net.Listen("tcp", ":0")
 	if err != nil {
@@ -121,7 +127,7 @@ func startBackend(port int) error {
 	}
 
 	appCmd = exec.Command(filepath.Join(getAppDir(), appExecutable))
-	appCmd.Dir = getAppDir()
+	appCmd.Dir = getWorkDir()
 	appCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
 	env := os.Environ()
