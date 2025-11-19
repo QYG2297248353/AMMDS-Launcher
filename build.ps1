@@ -69,19 +69,43 @@ if (!(Test-Path $outputDir)) {
 
 # 构建项目
 if (-not $NoBuild) {
+    Write-Host "`n正在检查 Go 依赖..." -ForegroundColor Yellow
+    
+    # 检查 go.mod 文件是否存在
+    if (Test-Path "go.mod") {
+        Write-Host "发现 go.mod 文件，正在整理依赖..." -ForegroundColor Gray
+        $tidyResult = Start-Process -FilePath "go" -ArgumentList @("mod", "tidy") -NoNewWindow -Wait -PassThru -WorkingDirectory $(Get-Location)
+        if ($tidyResult.ExitCode -eq 0) {
+            Write-Host "依赖整理完成" -ForegroundColor Green
+        } else {
+            Write-Warning "依赖整理失败，将继续构建过程"
+        }
+    } else {
+        Write-Warning "未找到 go.mod 文件，可能需要手动处理依赖"
+    }
+    
     Write-Host "`n正在构建 AMMDS Launcher..." -ForegroundColor Yellow
     
     # 清理之前的构建
+    Write-Host "清理之前的构建..." -ForegroundColor Gray
     go clean
     
     # 构建 Windows GUI 应用
+    Write-Host "开始构建 Windows GUI 应用..." -ForegroundColor Gray
     $buildArgs = @(
         "build",
+        "-v",
         "-ldflags", '"-H windowsgui"',
         "-o", "$outputDir\AMMDS-Launcher.exe"
     )
     
+    Write-Host "执行命令: go $buildArgs" -ForegroundColor Gray
+    $startTime = Get-Date
     $result = Start-Process -FilePath "go" -ArgumentList $buildArgs -NoNewWindow -Wait -PassThru -WorkingDirectory $(Get-Location)
+    $endTime = Get-Date
+    $duration = ($endTime - $startTime).TotalSeconds
+    
+    Write-Host "构建耗时: $duration 秒" -ForegroundColor Gray
     
     if ($result.ExitCode -eq 0) {
         Write-Host "构建成功!" -ForegroundColor Green
@@ -97,7 +121,8 @@ if (-not $NoBuild) {
         }
         
         # 复制必要的依赖文件到 dist 目录
-        $requiredFiles = @("ammds.exe", "icon.ico", "logo.ico", "icon.png")
+        Write-Host "复制依赖文件..." -ForegroundColor Gray
+        $requiredFiles = @("ammds.exe", "icon.ico", "logo.ico")
         foreach ($file in $requiredFiles) {
             if (Test-Path $file) {
                 Copy-Item $file $outputDir -Force
@@ -168,13 +193,19 @@ if (-not $NoInstaller) {
             )
             
             # 确保在正确的目录运行 Inno Setup
+            Write-Host "执行命令: $isccPath $issArgs" -ForegroundColor Gray
+            $startTime = Get-Date
             $result = Start-Process -FilePath $isccPath -ArgumentList $issArgs -NoNewWindow -Wait -PassThru -WorkingDirectory $(Get-Location)
+            $endTime = Get-Date
+            $duration = ($endTime - $startTime).TotalSeconds
+            
+            Write-Host "安装包编译耗时: $duration 秒" -ForegroundColor Gray
             
             if ($result.ExitCode -eq 0) {
                 Write-Host "安装包编译成功!" -ForegroundColor Green
                 
-                # 查找生成的安装包 (在 Output 目录中)
-                $setupFiles = Get-ChildItem -Path "Output" -Filter "*.exe" -ErrorAction SilentlyContinue | Where-Object {$_.Name -like "*setup*"}
+                # 查找生成的安装包 (现在在 dist 目录中)
+                $setupFiles = Get-ChildItem -Path "dist" -Filter "*.exe" -ErrorAction SilentlyContinue | Where-Object {$_.Name -like "*setup*"}
                 if ($setupFiles) {
                     foreach ($setupFile in $setupFiles) {
                         $setupInfo = Get-Item $setupFile.FullName

@@ -1,8 +1,8 @@
 ; ------------------------------------
-; AMMDS Installer Script
+; AMMDS Installer Script (FINAL FIXED)
 ; ------------------------------------
 [Setup]
-AppName=ammds
+AppName=AMMDS
 AppVersion=1.6.32
 AppPublisher=新疆萌森软件开发工作室
 DefaultDirName={autopf}\ammds
@@ -13,8 +13,14 @@ SetupIconFile=icon.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+OutputDir=dist
+UninstallDisplayName=AMMDS
+UninstallDisplayIcon={app}\icon.ico
+AppSupportURL=https://ammds.lifebus.top
+AppUpdatesURL=https://ammds.lifebus.top
+AppPublisherURL=https://ammds.lifebus.top
 
-; 是否需要管理员权限
+; 以管理员方式安装
 PrivilegesRequired=admin
 
 ; ------------------------------------
@@ -25,7 +31,6 @@ Source: "dist\AMMDS-Launcher.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\ammds.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\logo.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\icon.png"; DestDir: "{app}"; Flags: ignoreversion
 
 ; ------------------------------------
 ; 用户可选功能
@@ -33,38 +38,47 @@ Source: "dist\icon.png"; DestDir: "{app}"; Flags: ignoreversion
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面图标"; Flags: unchecked
 Name: "startmenu"; Description: "创建开始菜单项"; Flags: unchecked
-Name: "autostart"; Description: "开机自动启动"; Flags: unchecked
-Name: "runafterinstall"; Description: "安装完成后立即启动 AMMDS"; Flags: unchecked
+Name: "autostart"; Description: "开机自动启动"; Flags: checkedonce
 
 ; ------------------------------------
 ; 快捷方式
 ; ------------------------------------
 [Icons]
-; 开始菜单
 Name: "{group}\AMMDS"; Filename: "{app}\AMMDS-Launcher.exe"; IconFilename: "{app}\icon.ico"; Tasks: startmenu
-
-; 桌面图标
 Name: "{commondesktop}\AMMDS"; Filename: "{app}\AMMDS-Launcher.exe"; IconFilename: "{app}\logo.ico"; Tasks: desktopicon
 
 ; ------------------------------------
-; 安装后执行
+; 安装完成界面执行
 ; ------------------------------------
 [Run]
-Filename: "{app}\AMMDS-Launcher.exe"; Description: "启动 AMMDS"; Flags: nowait postinstall skipifsilent; Tasks: runafterinstall
+Filename: "{app}\AMMDS-Launcher.exe"; Description: "启动 AMMDS"; Flags: nowait postinstall skipifsilent
+Filename: "https://ammds.lifebus.top/"; Description: "打开官方文档"; Flags: shellexec postinstall skipifsilent
 
 ; ------------------------------------
-; 注册项（用于开机自启）
+; 开机启动项
 ; ------------------------------------
 [Registry]
-; 勾选后写入 Run（开机启动项）
-Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ammds"; ValueData: """{app}\AMMDS-Launcher.exe"""; Tasks: autostart
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
+ValueType: string; ValueName: "AMMDS Launcher"; \
+ValueData: """{app}\AMMDS-Launcher.exe"""; \
+Flags: uninsdeletevalue 64bit; Tasks: autostart
 
-; 卸载时删除开机启动项
-Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueName: "ammds"; Flags: deletevalue
+; 卸载时删除
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
+ValueName: "AMMDS Launcher"; Flags: deletevalue 64bit
 
 ; ------------------------------------
-; 卸载前停止程序
+; 卸载前强制停止
 ; ------------------------------------
+[Code]
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then begin
+    RegDeleteValue(HKLM, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Run', 'AMMDS Launcher');
+  end;
+end;
+
 [UninstallRun]
-Filename: "{app}\AMMDS-Launcher.exe"; Parameters: "--stop"; Flags: runhidden skipifdoesntexist; RunOnceId: stopApp
-
+Filename: "{app}\AMMDS-Launcher.exe"; Parameters: "--uninstall"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: stopApp
+Filename: "cmd.exe"; Parameters: "/C taskkill /F /IM AMMDS-Launcher.exe"; Flags: runhidden; RunOnceId: killLauncher
+Filename: "cmd.exe"; Parameters: "/C taskkill /F /IM ammds.exe"; Flags: runhidden; RunOnceId: killAMMDS

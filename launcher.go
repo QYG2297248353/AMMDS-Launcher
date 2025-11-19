@@ -11,20 +11,18 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/windows"
+
 	"github.com/getlantern/systray"
 )
 
-// =============================
-// 全局配置变量
-// =============================
 var (
-	appName         = "AMMDS"
 	appExecutable   = "ammds.exe"
 	appIconFile     = "icon.ico"
 	maxRestarts     = 5
 	restartCooldown = 3 * time.Second
+	restartCount    = 0
 
-	// 环境变量
 	defaultEnv = map[string]string{
 		"AMMDS_SERVER_PORT":     "0",
 		"ADMIN_USER":            "ammds",
@@ -32,36 +30,88 @@ var (
 		"AMMDS_NETWORK_TIMEOUT": "60",
 	}
 
-	// 进程控制
 	cmdLock    sync.Mutex
 	appCmd     *exec.Cmd
 	shouldRun  = true
 	shouldLock sync.Mutex
 
-	// 运行时状态
 	runningLock sync.Mutex
 	isRunning   = false
+	
+	userStopped = false
+	userLock   sync.Mutex
 
-	// 控制通道（用于托盘命令 -> 守护循环）
 	controlCh = make(chan string, 1)
 	statusCh  = make(chan string, 5)
+
+	logFile *os.File
+
+	singletonLockFile *os.File
 )
 
 // =============================
-// 工具函数区域
+// 工具函数
 // =============================
 func getAppDir() string {
 	exe, err := os.Executable()
 	if err != nil {
-		log.Fatal("无法获取程序目录: ", err)
+		log.Fatal(err)
 	}
 	return filepath.Dir(exe)
 }
 
 func getWorkDir() string {
-    dir := filepath.Join(os.Getenv("LOCALAPPDATA"), "AMMDS")
-    os.MkdirAll(dir, 0755)
-    return dir
+	dir := filepath.Join(os.Getenv("LOCALAPPDATA"), "AMMDS")
+	os.MkdirAll(dir, 0755)
+	return dir
+}
+
+func getLogDir() string {
+	dir := filepath.Join(getWorkDir(), "logs")
+	os.MkdirAll(dir, 0755)
+	return dir
+}
+
+func acquireSingletonLock() bool {
+	lockFilePath := filepath.Join(getWorkDir(), "ammds_launcher.lock")
+	file, err := os.OpenFile(lockFilePath, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return false
+	}
+
+	if err := lockFile(int(file.Fd())); err != nil {
+		file.Close()
+		return false
+	}
+
+	singletonLockFile = file
+	return true
+}
+
+func lockFile(fd int) error {
+	return windows.LockFileEx(windows.Handle(fd), windows.LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &windows.Overlapped{})
+}
+
+func releaseSingletonLock() {
+	if singletonLockFile != nil {
+		singletonLockFile.Close()
+		lockFilePath := filepath.Join(getWorkDir(), "ammds_launcher.lock")
+		os.Remove(lockFilePath)
+		singletonLockFile = nil
+	}
+}
+
+func initLogger() {
+	logPath := filepath.Join(getLogDir(), "launcher.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err == nil {
+		log.SetOutput(f)
+		logFile = f
+	}
+}
+
+func openFolder(path string) {
+	_ = exec.Command("explorer", path).Start()
 }
 
 func getFreePort() int {
@@ -74,23 +124,21 @@ func getFreePort() int {
 }
 
 func openBrowser(url string) {
-	// windows default
 	_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 }
 
 func loadIconBytes() []byte {
-	iconPath := filepath.Join(getAppDir(), appIconFile)
-	b, err := os.ReadFile(iconPath)
+	path := filepath.Join(getAppDir(), appIconFile)
+	b, err := os.ReadFile(path)
 	if err != nil {
-		log.Printf("无法读取图标 %s: %v", iconPath, err)
 		return nil
 	}
 	return b
 }
 
-func setRunningState(r bool) {
+func setRunningState(v bool) {
 	runningLock.Lock()
-	isRunning = r
+	isRunning = v
 	runningLock.Unlock()
 }
 
@@ -112,90 +160,124 @@ func getShouldRun() bool {
 	return shouldRun
 }
 
+func setUserStopped(v bool) {
+	userLock.Lock()
+	userStopped = v
+	userLock.Unlock()
+}
+
+func getUserStopped() bool {
+	userLock.Lock()
+	defer userLock.Unlock()
+	return userStopped
+}
+
 // =============================
-// 启动后端
+// 后端控制
 // =============================
 func startBackend(port int) error {
 	cmdLock.Lock()
 	defer cmdLock.Unlock()
 
-	// If already running, do nothing
-	if appCmd != nil && appCmd.Process != nil {
-		if getRunningState() {
-			return nil
-		}
+	if appCmd != nil && appCmd.Process != nil && getRunningState() {
+		log.Println("Backend is already running")
+		return nil
 	}
 
+	log.Printf("Starting backend on port %d", port)
 	appCmd = exec.Command(filepath.Join(getAppDir(), appExecutable))
 	appCmd.Dir = getWorkDir()
 	appCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
+	appCmd.Stdout = logFile
+	appCmd.Stderr = logFile
+
 	env := os.Environ()
-	localEnv := make(map[string]string)
-
 	for k, v := range defaultEnv {
-		localEnv[k] = v
-	}
-
-	localEnv["AMMDS_SERVER_PORT"] = fmt.Sprintf("%d", port)
-
-	// 系统环境覆盖默认
-	for k := range localEnv {
 		if sysVal, ok := os.LookupEnv(k); ok {
-			localEnv[k] = sysVal
+			v = sysVal
 		}
-	}
-
-	for k, v := range localEnv {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
+	env = append(env, fmt.Sprintf("AMMDS_SERVER_PORT=%d", port))
+
 	appCmd.Env = env
 
-	// 启动
 	if err := appCmd.Start(); err != nil {
+		log.Printf("Failed to start backend: %v", err)
 		appCmd = nil
 		return err
 	}
+
+	log.Printf("Backend started with PID: %d", appCmd.Process.Pid)
 	setRunningState(true)
 	statusCh <- fmt.Sprintf("started pid=%d", appCmd.Process.Pid)
 	return nil
 }
 
-// 停止后端（用户主动停止）
 func stopBackend() {
 	cmdLock.Lock()
 	defer cmdLock.Unlock()
 
 	if appCmd != nil && appCmd.Process != nil {
-		// 在 Windows 上使用 Kill
-		_ = appCmd.Process.Kill()
-		_, _ = appCmd.Process.Wait()
-		statusCh <- "killed"
+		log.Printf("Stopping backend with PID: %d", appCmd.Process.Pid)
+		err := appCmd.Process.Signal(os.Interrupt)
+		if err != nil {
+			log.Printf("Failed to send interrupt signal: %v", err)
+			_ = appCmd.Process.Kill()
+		}
+
+		done := make(chan error, 1)
+		go func() {
+			done <- appCmd.Wait()
+		}()
+
+		select {
+		case <-done:
+			log.Println("Backend stopped gracefully")
+			statusCh <- "backend stopped gracefully"
+		case <-time.After(5 * time.Second):
+			log.Println("Backend stop timeout, killing forcefully")
+			_ = appCmd.Process.Kill()
+			appCmd.Wait()
+			statusCh <- "backend killed forcefully"
+		}
+	} else {
+		log.Println("Backend is not running")
 	}
+
 	appCmd = nil
 	setRunningState(false)
 }
 
 // =============================
-// 守护循环（单端口，不重复生成）
+// 守护
 // =============================
 func daemonLoop(port int) {
-	restarts := 0
+	restartCount = 0
 
 	for {
 		select {
-		case cmd := <-controlCh:
-			switch cmd {
+		case c := <-controlCh:
+			log.Printf("Received control command: %s", c)
+			switch c {
 			case "start":
 				setShouldRun(true)
+				setUserStopped(false)
+				restartCount = 0
 			case "stop":
 				setShouldRun(false)
+				setUserStopped(true)
 				stopBackend()
+				restartCount = 0
 			case "restart":
 				stopBackend()
 				setShouldRun(true)
+				setUserStopped(false)
+				restartCount = 0
 			case "quit":
 				setShouldRun(false)
+				setUserStopped(true)
 				stopBackend()
 				statusCh <- "quit"
 				return
@@ -203,85 +285,123 @@ func daemonLoop(port int) {
 		default:
 		}
 
-		if !getShouldRun() {
-			cmd := <-controlCh
-			switch cmd {
-			case "start":
-				setShouldRun(true)
-			case "quit":
-				statusCh <- "quit"
-				return
-			case "restart":
-				setShouldRun(true)
-			}
+		if !getShouldRun() || getUserStopped() {
+			time.Sleep(300 * time.Millisecond)
+			continue
 		}
 
-		// 启动 backend
 		err := startBackend(port)
 		if err != nil {
-			log.Printf("启动失败: %v", err)
-			statusCh <- fmt.Sprintf("start_error:%v", err)
-			restarts++
-			if restarts > maxRestarts {
-				log.Printf("重启次数超过限制（%d 次），退出守护。", maxRestarts)
-				return
+			statusCh <- fmt.Sprintf("failed to start: %v", err)
+			restartCount++
+
+			if restartCount >= maxRestarts {
+				statusCh <- fmt.Sprintf("exceeded max restarts (%d), giving up", maxRestarts)
+				setShouldRun(false)
+				continue
 			}
+
 			time.Sleep(restartCooldown)
 			continue
 		}
 
 		waitCh := make(chan error, 1)
-		go func(cmd *exec.Cmd) {
-			waitCh <- cmd.Wait()
-		}(appCmd)
+		go func(cmd *exec.Cmd) { waitCh <- cmd.Wait() }(appCmd)
 
 		select {
 		case err := <-waitCh:
 			setRunningState(false)
-			if err != nil {
-				log.Printf("程序退出（异常）: %v", err)
-				statusCh <- fmt.Sprintf("exited_error:%v", err)
-			} else {
-				log.Printf("程序退出（正常）")
-				statusCh <- "exited_ok"
-			}
+			statusCh <- fmt.Sprintf("process exited with error: %v", err)
 
-			if getShouldRun() {
-				restarts++
-				if restarts > maxRestarts {
-					log.Printf("重启次数超过限制（%d 次），退出守护。", maxRestarts)
+			if getShouldRun() && !getUserStopped() {
+				restartCount++
+
+				if restartCount >= maxRestarts {
+					statusCh <- fmt.Sprintf("exceeded max restarts (%d), giving up", maxRestarts)
+					setShouldRun(false)
+					continue
+				}
+
+				time.Sleep(restartCooldown)
+			}
+		case c := <-controlCh:
+			if c == "stop" || c == "restart" || c == "quit" {
+				if c == "stop" {
+					setUserStopped(true)
+				}
+				stopBackend()
+				restartCount = 0
+
+				if c == "quit" {
 					return
 				}
-				log.Printf("%d 秒后尝试重启（第 %d/%d 次）...", restartCooldown/time.Second, restarts, maxRestarts)
-				time.Sleep(restartCooldown)
-				continue
-			} else {
-				continue
-			}
-		case cmd := <-controlCh:
-			switch cmd {
-			case "stop":
-				setShouldRun(false)
-				stopBackend()
-				continue
-			case "restart":
-				stopBackend()
-				continue
-			case "quit":
-				setShouldRun(false)
-				stopBackend()
-				statusCh <- "quit"
-				return
-			case "start":
 			}
 		}
 	}
 }
 
 // =============================
-// 主入口 + 托盘
+// 卸载
+// =============================
+func handleUninstall() {
+	log.Println("Received --uninstall: stopping backend...")
+
+	setShouldRun(false)
+
+	stopBackend()
+
+	killAllAMMDSProcesses()
+
+	select {
+	case controlCh <- "quit":
+		log.Println("Sent quit signal to systray")
+	case <-time.After(1 * time.Second):
+		log.Println("Timeout sending quit signal, proceeding anyway")
+	}
+
+	time.Sleep(3 * time.Second)
+
+	if logFile != nil {
+		logFile.Close()
+	}
+
+	releaseSingletonLock()
+
+	os.Exit(0)
+}
+
+func killAllAMMDSProcesses() {
+	cmd := exec.Command("taskkill", "/F", "/IM", "ammds.exe")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.Run()
+	
+	cmd = exec.Command("taskkill", "/F", "/IM", "AMMDS-Launcher.exe", "/FI", "PID ne " + fmt.Sprintf("%d", os.Getpid()))
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.Run()
+	
+	log.Println("Attempted to kill all AMMDS related processes")
+}
+
+// =============================
+// 主入口
 // =============================
 func main() {
+	initLogger()
+
+	for _, arg := range os.Args {
+		if arg == "--uninstall" {
+			handleUninstall()
+			return
+		}
+	}
+
+	if !acquireSingletonLock() {
+		log.Println("AMMDS Launcher is already running, exiting")
+		os.Exit(1)
+	}
+
+	log.Println("Starting AMMDS Launcher...")
+	
 	systray.Run(onReady, onExit)
 }
 
@@ -289,20 +409,24 @@ func onReady() {
 	if icon := loadIconBytes(); icon != nil {
 		systray.SetIcon(icon)
 	}
+
 	systray.SetTitle("AMMDS Launcher")
 	systray.SetTooltip("AMMDS 后端服务守护程序")
 
 	mStart := systray.AddMenuItem("启动", "启动后端服务")
 	mStop := systray.AddMenuItem("停止", "停止后端服务")
 	mRestart := systray.AddMenuItem("重启", "重启后端服务")
+
+	systray.AddSeparator()
+	mData := systray.AddMenuItem("打开数据目录", "打开数据存储目录")
+
 	systray.AddSeparator()
 	mOpen := systray.AddMenuItem("打开面板", "打开 Web UI")
+
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("退出", "退出程序")
 
 	port := getFreePort()
-	log.Printf("启动 %s，端口: %d", appName, port)
-	openBrowser(fmt.Sprintf("http://localhost:%d", port))
 
 	go daemonLoop(port)
 
@@ -310,16 +434,34 @@ func onReady() {
 		for {
 			select {
 			case <-mStart.ClickedCh:
-				controlCh <- "start"
+				select {
+				case controlCh <- "start":
+				default:
+					log.Println("Control channel is full, dropping start command")
+				}
 			case <-mStop.ClickedCh:
-				controlCh <- "stop"
+				select {
+				case controlCh <- "stop":
+				default:
+					log.Println("Control channel is full, dropping stop command")
+				}
 			case <-mRestart.ClickedCh:
-				controlCh <- "restart"
+				select {
+				case controlCh <- "restart":
+				default:
+					log.Println("Control channel is full, dropping restart command")
+				}
+			case <-mData.ClickedCh:
+				openFolder(getWorkDir())
 			case <-mOpen.ClickedCh:
 				openBrowser(fmt.Sprintf("http://localhost:%d", port))
 			case <-mQuit.ClickedCh:
-				controlCh <- "quit"
-				// 退出 systray
+				select {
+				case controlCh <- "quit":
+				default:
+					log.Println("Control channel is full, proceeding with quit anyway")
+				}
+				time.Sleep(500 * time.Millisecond)
 				systray.Quit()
 				return
 			}
@@ -329,8 +471,7 @@ func onReady() {
 	go func() {
 		for {
 			time.Sleep(800 * time.Millisecond)
-			r := getRunningState()
-			if r {
+			if getRunningState() {
 				mStart.Disable()
 				mStop.Enable()
 			} else {
@@ -348,6 +489,17 @@ func onReady() {
 }
 
 func onExit() {
-	controlCh <- "quit"
+	log.Println("AMMDS Launcher is exiting...")
+	select {
+	case controlCh <- "quit":
+		log.Println("Sent quit signal in onExit")
+	case <-time.After(500 * time.Millisecond):
+		log.Println("Timeout sending quit signal in onExit")
+	}
 	stopBackend()
+	if logFile != nil {
+		logFile.Close()
+	}
+	releaseSingletonLock()
+	log.Println("AMMDS Launcher has exited cleanly")
 }

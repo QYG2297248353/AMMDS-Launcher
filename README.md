@@ -55,6 +55,22 @@ gcc --version
 # 应显示 GCC 版本信息
 ```
 
+### Go 依赖包
+
+项目使用 Go Modules 管理依赖，主要依赖包括：
+
+- `github.com/getlantern/systray`: 用于创建系统托盘图标和菜单
+
+首次构建时，Go 会自动下载所需的依赖包。也可以手动执行以下命令来下载和安装依赖：
+
+```bash
+# 下载并安装所有依赖
+go mod download
+
+# 或者在项目根目录执行以下命令确保依赖完整
+go mod tidy
+```
+
 ## 构建说明
 
 ### 方法一：使用 PowerShell 脚本构建（推荐）
@@ -77,13 +93,18 @@ gcc --version
 
 ### 方法二：手动构建命令
 
-使用以下命令构建无控制台窗口的 Windows 可执行文件：
+使用以下命令构建无控制台窗口的 Windows 可行文件：
 
 ```bash
+# 确保依赖完整
+go mod tidy
+
+# 构建
 go build -ldflags "-H windowsgui" -o AMMDS-Launcher.exe
 ```
 
 参数说明：
+- `go mod tidy`: 整理并下载缺失的依赖
 - `-ldflags "-H windowsgui"`: 创建 Windows GUI 应用程序，不显示命令行窗口
 - `-o AMMDS-Launcher.exe`: 指定输出文件名
 
@@ -93,7 +114,7 @@ go build -ldflags "-H windowsgui" -o AMMDS-Launcher.exe
 
 - `github.com/getlantern/systray`: 用于创建系统托盘图标和菜单
 
-所有依赖项已在 go.mod 文件中定义。
+所有依赖项可通过 `go.mod` 文件管理。
 
 ## 安装打包
 
@@ -113,7 +134,7 @@ PowerShell 构建脚本 [build.ps1](build.ps1) 会自动查找系统中的 Inno 
 安装包包含以下组件：
 - AMMDS-Launcher.exe: 启动器主程序
 - ammds.exe: AMMDS 后端服务程序
-- icon.ico/icon.png: 图标文件
+- icon.ico/logo.ico: 图标文件
 
 安装选项：
 - 创建桌面图标
@@ -166,6 +187,11 @@ PowerShell 构建脚本 [build.ps1](build.ps1) 会自动查找系统中的 Inno 
 ### 托盘图标不显示
 - 确认 Windows Explorer 正常运行
 - 尝试重启 Windows Explorer 进程
+
+### Go 依赖问题
+- 确保网络连接正常，以便下载依赖
+- 执行 `go mod tidy` 命令同步依赖
+- 清理模块缓存后重试：`go clean -modcache` 然后重新构建
 
 ## 许可证
 
