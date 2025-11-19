@@ -57,7 +57,25 @@ gcc --version
 
 ## 构建说明
 
-### 构建命令
+### 方法一：使用 PowerShell 脚本构建（推荐）
+
+项目提供了一个 PowerShell 构建脚本 [build.ps1](build.ps1)，可以自动完成构建和打包过程：
+
+```powershell
+# 基本构建
+.\build.ps1
+
+# 指定版本号构建
+.\build.ps1 -Version "1.6.33"
+
+# 仅构建可执行文件，不创建安装包
+.\build.ps1 -NoInstaller
+
+# 仅创建安装包，不重新构建可执行文件
+.\build.ps1 -NoBuild
+```
+
+### 方法二：手动构建命令
 
 使用以下命令构建无控制台窗口的 Windows 可执行文件：
 
@@ -81,7 +99,11 @@ go build -ldflags "-H windowsgui" -o AMMDS-Launcher.exe
 
 项目包含 Inno Setup 安装脚本 [installer.iss](installer.iss)，可用于创建 Windows 安装包。
 
-### 使用 Inno Setup 打包
+### 使用 PowerShell 脚本打包（推荐）
+
+PowerShell 构建脚本 [build.ps1](build.ps1) 会自动查找系统中的 Inno Setup 编译器并创建安装包。
+
+### 手动使用 Inno Setup 打包
 
 1. 安装 Inno Setup 6.0 或更高版本
 2. 打开 [installer.iss](installer.iss) 脚本文件
@@ -147,4 +169,4 @@ go build -ldflags "-H windowsgui" -o AMMDS-Launcher.exe
 
 ## 许可证
 
-核心程序由[新疆萌森软件开发工作室](https://github.com/QYG2297248353/AMMDS-Docker)许可授权。
+请根据实际项目许可证情况填写此部分。

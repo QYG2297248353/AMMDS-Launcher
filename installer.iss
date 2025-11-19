@@ -40,23 +40,23 @@ Name: "runafterinstall"; Description: "安装完成后立即启动 AMMDS"; Flags
 ; ------------------------------------
 [Icons]
 ; 开始菜单
-Name: "{group}\AMMDS"; Filename: "{app}\Launcher.exe"; IconFilename: "{app}\icon.ico"; Tasks: startmenu
+Name: "{group}\AMMDS"; Filename: "{app}\AMMDS-Launcher.exe"; IconFilename: "{app}\icon.ico"; Tasks: startmenu
 
 ; 桌面图标
-Name: "{commondesktop}\AMMDS"; Filename: "{app}\Launcher.exe"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
+Name: "{commondesktop}\AMMDS"; Filename: "{app}\AMMDS-Launcher.exe"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
 
 ; ------------------------------------
 ; 安装后执行
 ; ------------------------------------
 [Run]
-Filename: "{app}\Launcher.exe"; Description: "启动 AMMDS"; Flags: nowait postinstall skipifsilent; Tasks: runafterinstall
+Filename: "{app}\AMMDS-Launcher.exe"; Description: "启动 AMMDS"; Flags: nowait postinstall skipifsilent; Tasks: runafterinstall
 
 ; ------------------------------------
 ; 注册项（用于开机自启）
 ; ------------------------------------
 [Registry]
 ; 勾选后写入 Run（开机启动项）
-Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ammds"; ValueData: """{app}\Launcher.exe"""; Tasks: autostart
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ammds"; ValueData: """{app}\AMMDS-Launcher.exe"""; Tasks: autostart
 
 ; 卸载时删除开机启动项
 Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueName: "ammds"; Flags: deletevalue
@@ -65,5 +65,5 @@ Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueName: 
 ; 卸载前停止程序
 ; ------------------------------------
 [UninstallRun]
-Filename: "{app}\Launcher.exe"; Parameters: "--stop"; Flags: runhidden skipifdoesntexist
+Filename: "{app}\AMMDS-Launcher.exe"; Parameters: "--stop"; Flags: runhidden skipifdoesntexist
 
