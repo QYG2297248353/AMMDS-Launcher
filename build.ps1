@@ -16,7 +16,6 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host "AMMDS Launcher 构建脚本" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 
-# 如果没有指定版本号，则尝试从 version 文件读取
 if (-not $Version) {
     $versionFile = "version"
     if (Test-Path $versionFile) {
@@ -35,24 +34,20 @@ if (-not $Version) {
     Write-Host "使用指定版本号: $Version" -ForegroundColor Cyan
 }
 
-# 检查 Go 是否安装
 $goVersion = Get-Command go -ErrorAction SilentlyContinue
 if (-not $goVersion) {
     Write-Error "错误: 未找到 Go 编译器。请先安装 Go 1.25 或更高版本。"
     exit 1
 }
 
-# 获取 Go 版本
 $goVer = go version
 Write-Host "Go 版本: $goVer" -ForegroundColor Cyan
 
-# 检查 CGO 是否启用
 $cgoEnabled = $(go env CGO_ENABLED)
 if ($cgoEnabled -ne "1") {
     Write-Warning "警告: CGO 未启用，可能会导致构建失败。"
 }
 
-# 检查 GCC 是否可用
 $gccVersion = Get-Command gcc -ErrorAction SilentlyContinue
 if (-not $gccVersion) {
     Write-Warning "警告: 未找到 GCC 编译器。如果项目依赖 CGO，构建可能会失败。"
@@ -61,17 +56,14 @@ if (-not $gccVersion) {
     Write-Host "GCC 版本: $($gccVer[0])" -ForegroundColor Cyan
 }
 
-# 创建输出目录
 $outputDir = "dist"
 if (!(Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir | Out-Null
 }
 
-# 构建项目
 if (-not $NoBuild) {
     Write-Host "`n正在检查 Go 依赖..." -ForegroundColor Yellow
     
-    # 检查 go.mod 文件是否存在
     if (Test-Path "go.mod") {
         Write-Host "发现 go.mod 文件，正在整理依赖..." -ForegroundColor Gray
         $tidyResult = Start-Process -FilePath "go" -ArgumentList @("mod", "tidy") -NoNewWindow -Wait -PassThru -WorkingDirectory $(Get-Location)
@@ -86,11 +78,17 @@ if (-not $NoBuild) {
     
     Write-Host "`n正在构建 AMMDS Launcher..." -ForegroundColor Yellow
     
-    # 清理之前的构建
     Write-Host "清理之前的构建..." -ForegroundColor Gray
     go clean
     
-    # 构建 Windows GUI 应用
+    Write-Host "生成 Windows 资源文件..." -ForegroundColor Gray
+    if (Test-Path "icon.ico") {
+        rsrc -ico icon.ico -o rsrc.syso
+        Write-Host "已生成资源文件 rsrc.syso" -ForegroundColor Cyan
+    } else {
+        Write-Warning "未找到 icon.ico 文件，将使用默认图标"
+    }
+    
     Write-Host "开始构建 Windows GUI 应用..." -ForegroundColor Gray
     $buildArgs = @(
         "build",
@@ -110,7 +108,6 @@ if (-not $NoBuild) {
     if ($result.ExitCode -eq 0) {
         Write-Host "构建成功!" -ForegroundColor Green
         
-        # 显示生成的文件信息
         if (Test-Path "$outputDir\AMMDS-Launcher.exe") {
             $exeInfo = Get-Item "$outputDir\AMMDS-Launcher.exe"
             Write-Host "输出文件: $($exeInfo.FullName)" -ForegroundColor Cyan
@@ -120,7 +117,6 @@ if (-not $NoBuild) {
             exit 1
         }
         
-        # 复制必要的依赖文件到 dist 目录
         Write-Host "复制依赖文件..." -ForegroundColor Gray
         $requiredFiles = @("ammds.exe", "icon.ico", "logo.ico")
         foreach ($file in $requiredFiles) {
@@ -139,7 +135,6 @@ if (-not $NoBuild) {
     Write-Host "`n跳过构建步骤..." -ForegroundColor Yellow
 }
 
-# 检查 exe 文件是否存在，如果不存在则退出
 if ((-not $NoBuild) -and (-not (Test-Path "$outputDir\AMMDS-Launcher.exe"))) {
     Write-Error "AMMDS-Launcher.exe 文件不存在，无法创建安装包"
     exit 1
@@ -147,9 +142,7 @@ if ((-not $NoBuild) -and (-not (Test-Path "$outputDir\AMMDS-Launcher.exe"))) {
     Write-Host "`n跳过构建步骤..." -ForegroundColor Yellow
 }
 
-# 创建安装包
 if (-not $NoInstaller) {
-    # 检查 AMMDS-Launcher.exe 是否存在
     if (-not (Test-Path "$outputDir\AMMDS-Launcher.exe")) {
         Write-Error "AMMDS-Launcher.exe 不存在，无法创建安装包"
         exit 1
@@ -157,7 +150,6 @@ if (-not $NoInstaller) {
     
     Write-Host "`n正在检查 Inno Setup 编译器..." -ForegroundColor Yellow
     
-    # 查找 Inno Setup 编译器
     $isccPaths = @(
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
         "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
@@ -176,7 +168,6 @@ if (-not $NoInstaller) {
     if ($isccPath) {
         Write-Host "找到 Inno Setup 编译器: $isccPath" -ForegroundColor Cyan
         
-        # 更新版本号到 iss 脚本
         $issFile = "installer.iss"
         if (Test-Path $issFile) {
             $content = Get-Content $issFile
@@ -185,14 +176,12 @@ if (-not $NoInstaller) {
             
             Write-Host "已更新安装脚本版本号为: $Version" -ForegroundColor Cyan
             
-            # 编译安装包
             Write-Host "`n正在编译安装包..." -ForegroundColor Yellow
             
             $issArgs = @(
                 "$issFile"
             )
             
-            # 确保在正确的目录运行 Inno Setup
             Write-Host "执行命令: $isccPath $issArgs" -ForegroundColor Gray
             $startTime = Get-Date
             $result = Start-Process -FilePath $isccPath -ArgumentList $issArgs -NoNewWindow -Wait -PassThru -WorkingDirectory $(Get-Location)
@@ -204,7 +193,6 @@ if (-not $NoInstaller) {
             if ($result.ExitCode -eq 0) {
                 Write-Host "安装包编译成功!" -ForegroundColor Green
                 
-                # 查找生成的安装包 (现在在 dist 目录中)
                 $setupFiles = Get-ChildItem -Path "dist" -Filter "*.exe" -ErrorAction SilentlyContinue | Where-Object {$_.Name -like "*setup*"}
                 if ($setupFiles) {
                     foreach ($setupFile in $setupFiles) {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 
 	"github.com/getlantern/systray"
 )
@@ -37,9 +38,9 @@ var (
 
 	runningLock sync.Mutex
 	isRunning   = false
-	
+
 	userStopped = false
-	userLock   sync.Mutex
+	userLock    sync.Mutex
 
 	controlCh = make(chan string, 1)
 	statusCh  = make(chan string, 5)
@@ -103,6 +104,18 @@ func releaseSingletonLock() {
 
 func initLogger() {
 	logPath := filepath.Join(getLogDir(), "launcher.log")
+
+	if _, err := os.Stat(logPath); err == nil {
+		f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			os.Remove(logPath)
+			f, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		}
+		if err == nil {
+			f.Close()
+		}
+	}
+
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err == nil {
 		log.SetOutput(f)
@@ -346,6 +359,11 @@ func daemonLoop(port int) {
 func handleUninstall() {
 	log.Println("Received --uninstall: stopping backend...")
 
+	if isAutoStartEnabled() {
+		log.Println("Auto-start is enabled, disabling it...")
+		_ = setAutoStart(false)
+	}
+
 	setShouldRun(false)
 
 	stopBackend()
@@ -374,11 +392,11 @@ func killAllAMMDSProcesses() {
 	cmd := exec.Command("taskkill", "/F", "/IM", "ammds.exe")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Run()
-	
-	cmd = exec.Command("taskkill", "/F", "/IM", "AMMDS-Launcher.exe", "/FI", "PID ne " + fmt.Sprintf("%d", os.Getpid()))
+
+	cmd = exec.Command("taskkill", "/F", "/IM", "AMMDS-Launcher.exe", "/FI", "PID ne "+fmt.Sprintf("%d", os.Getpid()))
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Run()
-	
+
 	log.Println("Attempted to kill all AMMDS related processes")
 }
 
@@ -401,7 +419,7 @@ func main() {
 	}
 
 	log.Println("Starting AMMDS Launcher...")
-	
+
 	systray.Run(onReady, onExit)
 }
 
@@ -423,10 +441,23 @@ func onReady() {
 	systray.AddSeparator()
 	mOpen := systray.AddMenuItem("打开面板", "打开 Web UI")
 
+	autoStartEnabled := isAutoStartEnabled()
+	var mAutoStart *systray.MenuItem
+	if autoStartEnabled {
+		mAutoStart = systray.AddMenuItem("禁用自动启动", "开机时不要自动启动")
+	} else {
+		mAutoStart = systray.AddMenuItem("启用自动启动", "开机时自动启动")
+	}
+
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("退出", "退出程序")
 
 	port := getFreePort()
+
+	go func() {
+		time.Sleep(3 * time.Second)
+		openBrowser(fmt.Sprintf("http://localhost:%d", port))
+	}()
 
 	go daemonLoop(port)
 
@@ -455,6 +486,25 @@ func onReady() {
 				openFolder(getWorkDir())
 			case <-mOpen.ClickedCh:
 				openBrowser(fmt.Sprintf("http://localhost:%d", port))
+			case <-mAutoStart.ClickedCh:
+				currentStatus := isAutoStartEnabled()
+				if currentStatus {
+					err := setAutoStart(false)
+					if err != nil {
+						log.Printf("Failed to disable auto start: %v", err)
+					} else {
+						mAutoStart.SetTitle("启用自动启动")
+						mAutoStart.SetTooltip("开机时自动启动")
+					}
+				} else {
+					err := setAutoStart(true)
+					if err != nil {
+						log.Printf("Failed to enable auto start: %v", err)
+					} else {
+						mAutoStart.SetTitle("禁用自动启动")
+						mAutoStart.SetTooltip("开机时不要自动启动")
+					}
+				}
 			case <-mQuit.ClickedCh:
 				select {
 				case controlCh <- "quit":
@@ -502,4 +552,33 @@ func onExit() {
 	}
 	releaseSingletonLock()
 	log.Println("AMMDS Launcher has exited cleanly")
+}
+
+func isAutoStartEnabled() bool {
+	k, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.READ)
+	if err != nil {
+		return false
+	}
+	defer k.Close()
+
+	_, _, err = k.GetStringValue("AMMDS Launcher")
+	return err == nil
+}
+
+func setAutoStart(enabled bool) error {
+	k, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer k.Close()
+
+	if enabled {
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		return k.SetStringValue("AMMDS Launcher", executable)
+	} else {
+		return k.DeleteValue("AMMDS Launcher")
+	}
 }

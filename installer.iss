@@ -23,6 +23,14 @@ AppPublisherURL=https://ammds.lifebus.top
 ; 以管理员方式安装
 PrivilegesRequired=admin
 
+ArchitecturesInstallIn64BitMode=x64compatible
+
+; ------------------------------------
+; 安装前删除
+; ------------------------------------
+[InstallDelete]
+Type: files; Name: "{localappdata}\IconCache.db"
+
 ; ------------------------------------
 ; 安装文件
 ; ------------------------------------
@@ -38,7 +46,7 @@ Source: "dist\logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面图标"; Flags: unchecked
 Name: "startmenu"; Description: "创建开始菜单项"; Flags: unchecked
-Name: "autostart"; Description: "开机自动启动"; Flags: checkedonce
+
 
 ; ------------------------------------
 ; 快捷方式
@@ -54,18 +62,6 @@ Name: "{commondesktop}\AMMDS"; Filename: "{app}\AMMDS-Launcher.exe"; IconFilenam
 Filename: "{app}\AMMDS-Launcher.exe"; Description: "启动 AMMDS"; Flags: nowait postinstall skipifsilent
 Filename: "https://ammds.lifebus.top/"; Description: "打开官方文档"; Flags: shellexec postinstall skipifsilent
 
-; ------------------------------------
-; 开机启动项
-; ------------------------------------
-[Registry]
-Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
-ValueType: string; ValueName: "AMMDS Launcher"; \
-ValueData: """{app}\AMMDS-Launcher.exe"""; \
-Flags: uninsdeletevalue 64bit; Tasks: autostart
-
-; 卸载时删除
-Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
-ValueName: "AMMDS Launcher"; Flags: deletevalue 64bit
 
 ; ------------------------------------
 ; 卸载前强制停止
@@ -74,7 +70,7 @@ ValueName: "AMMDS Launcher"; Flags: deletevalue 64bit
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then begin
-    RegDeleteValue(HKLM, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Run', 'AMMDS Launcher');
+    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'AMMDS Launcher');
   end;
 end;
 
