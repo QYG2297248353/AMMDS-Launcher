@@ -1,6 +1,10 @@
 ; ------------------------------------
 ; AMMDS Installer Script (FINAL FIXED)
 ; ------------------------------------
+[Languages]
+Name: "chs"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "en"; MessagesFile: "compiler:Default.isl"
+
 [Setup]
 AppName=AMMDS
 AppVersion=1.6.32
