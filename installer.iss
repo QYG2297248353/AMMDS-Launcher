@@ -5,11 +5,11 @@
 AppName=ammds
 AppVersion=1.6.32
 AppPublisher=新疆萌森软件开发工作室
-DefaultDirName={pf}\ammds
+DefaultDirName={autopf}\ammds
 DefaultGroupName=ammds
 DisableProgramGroupPage=yes
 OutputBaseFilename=ammds-setup
-SetupIconFile=icon.png
+SetupIconFile=icon.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -21,10 +21,11 @@ PrivilegesRequired=admin
 ; 安装文件
 ; ------------------------------------
 [Files]
-Source: "AMMDS-Launcher.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "ammds.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "icon.png"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\AMMDS-Launcher.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\ammds.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\logo.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\icon.png"; DestDir: "{app}"; Flags: ignoreversion
 
 ; ------------------------------------
 ; 用户可选功能
@@ -43,7 +44,7 @@ Name: "runafterinstall"; Description: "安装完成后立即启动 AMMDS"; Flags
 Name: "{group}\AMMDS"; Filename: "{app}\AMMDS-Launcher.exe"; IconFilename: "{app}\icon.ico"; Tasks: startmenu
 
 ; 桌面图标
-Name: "{commondesktop}\AMMDS"; Filename: "{app}\AMMDS-Launcher.exe"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
+Name: "{commondesktop}\AMMDS"; Filename: "{app}\AMMDS-Launcher.exe"; IconFilename: "{app}\logo.ico"; Tasks: desktopicon
 
 ; ------------------------------------
 ; 安装后执行
@@ -65,5 +66,5 @@ Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueName: 
 ; 卸载前停止程序
 ; ------------------------------------
 [UninstallRun]
-Filename: "{app}\AMMDS-Launcher.exe"; Parameters: "--stop"; Flags: runhidden skipifdoesntexist
+Filename: "{app}\AMMDS-Launcher.exe"; Parameters: "--stop"; Flags: runhidden skipifdoesntexist; RunOnceId: stopApp
 

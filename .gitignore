@@ -2,3 +2,8 @@ data
 db
 ammds.exe
 dist
+Output
+.vscode
+.git
+.idea
+.DS_Store

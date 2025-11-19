@@ -3,7 +3,7 @@
 
 param(
     [Parameter(Mandatory=$false)]
-    [String]$Version = "1.0.0",
+    [String]$Version,
     
     [Parameter(Mandatory=$false)]
     [Switch]$NoBuild,
@@ -15,6 +15,25 @@ param(
 Write-Host "========================================" -ForegroundColor Green
 Write-Host "AMMDS Launcher 构建脚本" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
+
+# 如果没有指定版本号，则尝试从 version 文件读取
+if (-not $Version) {
+    $versionFile = "version"
+    if (Test-Path $versionFile) {
+        $Version = Get-Content $versionFile -Raw | ForEach-Object { $_.Trim() }
+        if ($Version) {
+            Write-Host "从文件读取版本号: $Version" -ForegroundColor Cyan
+        } else {
+            $Version = "1.0.0"
+            Write-Host "使用默认版本号: $Version" -ForegroundColor Yellow
+        }
+    } else {
+        $Version = "1.0.0"
+        Write-Host "使用默认版本号: $Version" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "使用指定版本号: $Version" -ForegroundColor Cyan
+}
 
 # 检查 Go 是否安装
 $goVersion = Get-Command go -ErrorAction SilentlyContinue
@@ -68,12 +87,17 @@ if (-not $NoBuild) {
         Write-Host "构建成功!" -ForegroundColor Green
         
         # 显示生成的文件信息
-        $exeInfo = Get-Item "$outputDir\AMMDS-Launcher.exe"
-        Write-Host "输出文件: $($exeInfo.FullName)" -ForegroundColor Cyan
-        Write-Host "文件大小: $([math]::Round($exeInfo.Length / 1KB, 2)) KB" -ForegroundColor Cyan
+        if (Test-Path "$outputDir\AMMDS-Launcher.exe") {
+            $exeInfo = Get-Item "$outputDir\AMMDS-Launcher.exe"
+            Write-Host "输出文件: $($exeInfo.FullName)" -ForegroundColor Cyan
+            Write-Host "文件大小: $([math]::Round($exeInfo.Length / 1KB, 2)) KB" -ForegroundColor Cyan
+        } else {
+            Write-Error "构建过程声称成功，但未找到输出文件 AMMDS-Launcher.exe"
+            exit 1
+        }
         
         # 复制必要的依赖文件到 dist 目录
-        $requiredFiles = @("ammds.exe", "icon.ico", "icon.png")
+        $requiredFiles = @("ammds.exe", "icon.ico", "logo.ico", "icon.png")
         foreach ($file in $requiredFiles) {
             if (Test-Path $file) {
                 Copy-Item $file $outputDir -Force
@@ -90,8 +114,22 @@ if (-not $NoBuild) {
     Write-Host "`n跳过构建步骤..." -ForegroundColor Yellow
 }
 
+# 检查 exe 文件是否存在，如果不存在则退出
+if ((-not $NoBuild) -and (-not (Test-Path "$outputDir\AMMDS-Launcher.exe"))) {
+    Write-Error "AMMDS-Launcher.exe 文件不存在，无法创建安装包"
+    exit 1
+} else {
+    Write-Host "`n跳过构建步骤..." -ForegroundColor Yellow
+}
+
 # 创建安装包
 if (-not $NoInstaller) {
+    # 检查 AMMDS-Launcher.exe 是否存在
+    if (-not (Test-Path "$outputDir\AMMDS-Launcher.exe")) {
+        Write-Error "AMMDS-Launcher.exe 不存在，无法创建安装包"
+        exit 1
+    }
+    
     Write-Host "`n正在检查 Inno Setup 编译器..." -ForegroundColor Yellow
     
     # 查找 Inno Setup 编译器
@@ -135,8 +173,8 @@ if (-not $NoInstaller) {
             if ($result.ExitCode -eq 0) {
                 Write-Host "安装包编译成功!" -ForegroundColor Green
                 
-                # 查找生成的安装包
-                $setupFiles = Get-ChildItem -Path . -Filter "*.exe" | Where-Object {$_.Name -like "*setup*"}
+                # 查找生成的安装包 (在 Output 目录中)
+                $setupFiles = Get-ChildItem -Path "Output" -Filter "*.exe" -ErrorAction SilentlyContinue | Where-Object {$_.Name -like "*setup*"}
                 if ($setupFiles) {
                     foreach ($setupFile in $setupFiles) {
                         $setupInfo = Get-Item $setupFile.FullName
@@ -148,6 +186,7 @@ if (-not $NoInstaller) {
                 }
             } else {
                 Write-Error "安装包编译失败! ExitCode: $($result.ExitCode)"
+                exit $result.ExitCode
             }
         } else {
             Write-Warning "未找到安装脚本文件: $issFile"
