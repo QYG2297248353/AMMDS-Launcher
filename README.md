@@ -195,4 +195,4 @@ PowerShell 构建脚本 [build.ps1](build.ps1) 会自动查找系统中的 Inno 
 
 ## 许可证
 
-请根据实际项目许可证情况填写此部分。
+本项目由 [新疆萌森软件开发工作室](https://blog.lifebus.top/) 开发，遵循 [MIT 许可证](LICENSE)。
