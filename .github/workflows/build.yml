@@ -96,11 +96,35 @@ jobs:
         run: |
           .\build.ps1 -Version "${{ steps.extract_version.outputs.VERSION }}"
 
+      - name: Package executables
+        run: |
+          # Create a zip file containing the executables
+          $zipPath = "dist\ammds.zip"
+          $filesToZip = @("dist\AMMDS-Launcher.exe", "dist\ammds.exe")
+          
+          # Check if files exist
+          $allFilesExist = $true
+          foreach ($file in $filesToZip) {
+            if (-not (Test-Path $file)) {
+              Write-Warning "File not found: $file"
+              $allFilesExist = $false
+            }
+          }
+          
+          if ($allFilesExist) {
+            # Compress files into a zip archive
+            Compress-Archive -Path $filesToZip -DestinationPath $zipPath -Force
+            Write-Host "Created zip package: $zipPath"
+          } else {
+            throw "Cannot create zip package because some files are missing"
+          }
+
       - name: Upload release assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
             dist/ammds-setup.exe
+            dist/ammds.zip
           tag_name: ${{ github.event.release.tag_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
