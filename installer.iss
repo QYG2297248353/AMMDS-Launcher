@@ -7,7 +7,7 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 
 [Setup]
 AppName=AMMDS
-AppVersion=1.6.32
+AppVersion=1.6.35
 AppPublisher=新疆萌森软件开发工作室
 DefaultDirName={autopf}\ammds
 DefaultGroupName=ammds
