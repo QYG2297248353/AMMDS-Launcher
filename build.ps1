@@ -165,6 +165,16 @@ if (-not $NoInstaller) {
         }
     }
     
+    # Try to find ISCC.exe in PATH if not found in common locations
+    if (-not $isccPath) {
+        try {
+            $isccCommand = Get-Command ISCC.exe -ErrorAction Stop
+            $isccPath = $isccCommand.Source
+        } catch {
+            Write-Host "未能在常见位置或PATH中找到ISCC.exe" -ForegroundColor Red
+        }
+    }
+    
     if ($isccPath) {
         Write-Host "找到 Inno Setup 编译器: $isccPath" -ForegroundColor Cyan
         

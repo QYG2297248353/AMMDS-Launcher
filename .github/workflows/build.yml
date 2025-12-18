@@ -1,0 +1,90 @@
+name: Build AMMDS Launcher
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Install Inno Setup
+        run: |
+          # Try installing with chocolatey first, fallback to winget if needed
+          try {
+            choco install innosetup -y
+            Write-Host "Installed Inno Setup using Chocolatey"
+          } catch {
+            Write-Host "Chocolatey install failed, trying winget..."
+            winget install --id JRSoftware.InnoSetup --accept-package-agreements --accept-source-agreements
+          }
+          # Add Inno Setup to PATH
+          echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Setup Environment
+        run: |
+          # Refresh environment to make ISCC available
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          # Verify ISCC.exe is accessible
+          Get-Command ISCC.exe
+
+      - name: Extract version from tag
+        id: extract_version
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          if ($tag -match '^v(\d+\.\d+\.\d+)$') {
+            echo "VERSION=$($matches[1])" >> $env:GITHUB_OUTPUT
+            echo "TAG_VERSION=$tag" >> $env:GITHUB_OUTPUT
+          } else {
+            throw "Invalid tag format. Expected format: v1.2.3"
+          }
+
+      - name: Update version file
+        run: |
+          $version = "${{ steps.extract_version.outputs.VERSION }}"
+          Set-Content -Path version -Value $version
+          Write-Host "Updated version file to: $version"
+
+      - name: Download AMMDS core from Docker repository
+        run: |
+          $tagVersion = "${{ steps.extract_version.outputs.TAG_VERSION }}"
+          $downloadUrl = "https://github.com/QYG2297248353/AMMDS-Docker/releases/download/$tagVersion/ammds.zip"
+          Write-Host "Downloading from: $downloadUrl"
+          Invoke-WebRequest -Uri $downloadUrl -OutFile "ammds.zip"
+          
+      - name: Extract AMMDS core
+        run: |
+          Expand-Archive -Path "ammds.zip" -DestinationPath "." -Force
+          if (Test-Path "ammds.exe") {
+            Write-Host "Successfully extracted ammds.exe"
+          } else {
+            throw "Failed to extract ammds.exe from archive"
+          }
+
+      - name: Build AMMDS Launcher
+        run: |
+          .\build.ps1 -Version "${{ steps.extract_version.outputs.VERSION }}" -NoInstaller
+
+      - name: Create Installer
+        run: |
+          .\build.ps1 -Version "${{ steps.extract_version.outputs.VERSION }}"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/ammds-setup.exe
+          tag_name: ${{ github.event.release.tag_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
