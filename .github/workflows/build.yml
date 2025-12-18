@@ -38,6 +38,12 @@ jobs:
           $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
           # Verify ISCC.exe is accessible
           Get-Command ISCC.exe
+          
+          # Ensure Go bin directory is in PATH for rsrc tool
+          $goPath = go env GOPATH
+          $goBinPath = Join-Path $goPath "bin"
+          echo $goBinPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Write-Host "Added Go bin path to PATH: $goBinPath"
 
       - name: Extract version from tag
         id: extract_version

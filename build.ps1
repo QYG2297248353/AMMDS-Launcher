@@ -56,6 +56,30 @@ if (-not $gccVersion) {
     Write-Host "GCC 版本: $($gccVer[0])" -ForegroundColor Cyan
 }
 
+# 检查并安装 rsrc 工具
+$rsrcCommand = Get-Command rsrc -ErrorAction SilentlyContinue
+if (-not $rsrcCommand) {
+    Write-Host "正在安装 rsrc 工具..." -ForegroundColor Yellow
+    go install github.com/akavel/rsrc@latest
+    
+    # 检查 GOPATH 并添加到 PATH
+    $goPath = go env GOPATH
+    $goBinPath = Join-Path $goPath "bin"
+    if (-not ($env:PATH -like "*$goBinPath*")) {
+        $env:PATH = "$env:PATH;$goBinPath"
+    }
+    
+    # 再次检查 rsrc 是否可用
+    $rsrcCommand = Get-Command rsrc -ErrorAction SilentlyContinue
+    if (-not $rsrcCommand) {
+        Write-Warning "rsrc 工具安装失败，将跳过资源文件生成"
+    } else {
+        Write-Host "rsrc 工具安装成功" -ForegroundColor Green
+    }
+} else {
+    Write-Host "rsrc 工具已安装" -ForegroundColor Green
+}
+
 $outputDir = "dist"
 if (!(Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir | Out-Null
@@ -83,8 +107,14 @@ if (-not $NoBuild) {
     
     Write-Host "生成 Windows 资源文件..." -ForegroundColor Gray
     if (Test-Path "icon.ico") {
-        rsrc -ico icon.ico -o rsrc.syso
-        Write-Host "已生成资源文件 rsrc.syso" -ForegroundColor Cyan
+        # 检查 rsrc 是否可用，如果不可用则跳过资源文件生成
+        $rsrcCommand = Get-Command rsrc -ErrorAction SilentlyContinue
+        if ($rsrcCommand) {
+            rsrc -ico icon.ico -o rsrc.syso
+            Write-Host "已生成资源文件 rsrc.syso" -ForegroundColor Cyan
+        } else {
+            Write-Warning "rsrc 工具不可用，跳过资源文件生成"
+        }
     } else {
         Write-Warning "未找到 icon.ico 文件，将使用默认图标"
     }
