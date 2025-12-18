@@ -29,8 +29,6 @@ jobs:
             Write-Host "Chocolatey install failed, trying winget..."
             winget install --id JRSoftware.InnoSetup --accept-package-agreements --accept-source-agreements
           }
-          # Add Inno Setup to PATH
-          echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Setup Environment
         run: |
@@ -44,6 +42,18 @@ jobs:
           $goBinPath = Join-Path $goPath "bin"
           echo $goBinPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           Write-Host "Added Go bin path to PATH: $goBinPath"
+
+      - name: Install Custom Language Files
+        run: |
+          # Copy custom language files to Inno Setup directory
+          $innoLangDir = "C:\Program Files (x86)\Inno Setup 6\Languages"
+          if (Test-Path "Languages") {
+            Write-Host "Copying custom language files to Inno Setup directory..."
+            Copy-Item "Languages\*" $innoLangDir -Force
+            Write-Host "Language files copied successfully."
+          } else {
+            Write-Warning "Languages directory not found in project root."
+          }
 
       - name: Extract version from tag
         id: extract_version
