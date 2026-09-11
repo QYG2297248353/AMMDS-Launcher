@@ -429,11 +429,11 @@ func onReady() {
 	}
 
 	systray.SetTitle("AMMDS Launcher")
-	systray.SetTooltip("AMMDS 后端服务守护程序")
+	systray.SetTooltip("AMMDS 核心守护程序")
 
-	mStart := systray.AddMenuItem("启动", "启动后端服务")
-	mStop := systray.AddMenuItem("停止", "停止后端服务")
-	mRestart := systray.AddMenuItem("重启", "重启后端服务")
+	mStart := systray.AddMenuItem("启动", "启动核心服务")
+	mStop := systray.AddMenuItem("停止", "停止核心服务")
+	mRestart := systray.AddMenuItem("重启", "重启核心服务")
 
 	systray.AddSeparator()
 	mData := systray.AddMenuItem("打开数据目录", "打开数据存储目录")

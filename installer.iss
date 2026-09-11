@@ -14,7 +14,7 @@ DefaultGroupName=ammds
 DisableProgramGroupPage=yes
 OutputBaseFilename=ammds-setup
 SetupIconFile=icon.ico
-Compression=lzma
+Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 OutputDir=dist
@@ -65,18 +65,6 @@ Name: "{commondesktop}\AMMDS"; Filename: "{app}\AMMDS-Launcher.exe"; IconFilenam
 [Run]
 Filename: "{app}\AMMDS-Launcher.exe"; Description: "启动 AMMDS"; Flags: nowait postinstall skipifsilent
 Filename: "https://ammds.lifebus.top/"; Description: "打开官方文档"; Flags: shellexec postinstall skipifsilent
-
-
-; ------------------------------------
-; 卸载前强制停止
-; ------------------------------------
-[Code]
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-begin
-  if CurUninstallStep = usUninstall then begin
-    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'AMMDS Launcher');
-  end;
-end;
 
 [UninstallRun]
 Filename: "{app}\AMMDS-Launcher.exe"; Parameters: "--uninstall"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: stopApp

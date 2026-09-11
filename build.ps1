@@ -34,6 +34,22 @@ if (-not $Version) {
     Write-Host "使用指定版本号: $Version" -ForegroundColor Cyan
 }
 
+# 同步 versioninfo.json 版本号
+if (Test-Path "versioninfo.json") {
+    Write-Host "同步 versioninfo.json 版本号: $Version" -ForegroundColor Cyan
+    $viContent = Get-Content "versioninfo.json" -Raw
+    $verParts = $Version.Split(".")
+    $maj = if ($verParts.Length -gt 0) { $verParts[0] } else { "0" }
+    $min = if ($verParts.Length -gt 1) { $verParts[1] } else { "0" }
+    $pat = if ($verParts.Length -gt 2) { $verParts[2] } else { "0" }
+    $viContent = $viContent -replace '"FileVersion": \{ "Major": \d+, "Minor": \d+, "Patch": \d+, "Build": \d+ \}', ('"FileVersion": { "Major": ' + $maj + ', "Minor": ' + $min + ', "Patch": ' + $pat + ', "Build": 0 }')
+    $viContent = $viContent -replace '"ProductVersion": \{ "Major": \d+, "Minor": \d+, "Patch": \d+, "Build": \d+ \}', ('"ProductVersion": { "Major": ' + $maj + ', "Minor": ' + $min + ', "Patch": ' + $pat + ', "Build": 0 }')
+    $viContent = $viContent -replace '"FileVersion": "\d+\.\d+\.\d+"', ('"FileVersion": "' + $Version + '"')
+    $viContent = $viContent -replace '"ProductVersion": "\d+\.\d+\.\d+"', ('"ProductVersion": "' + $Version + '"')
+    [System.IO.File]::WriteAllText((Join-Path (Get-Location) "versioninfo.json"), $viContent, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "versioninfo.json 版本号已更新" -ForegroundColor Green
+}
+
 $goVersion = Get-Command go -ErrorAction SilentlyContinue
 if (-not $goVersion) {
     Write-Error "错误: 未找到 Go 编译器。请先安装 Go 1.25 或更高版本。"
@@ -56,11 +72,11 @@ if (-not $gccVersion) {
     Write-Host "GCC 版本: $($gccVer[0])" -ForegroundColor Cyan
 }
 
-# 检查并安装 rsrc 工具
-$rsrcCommand = Get-Command rsrc -ErrorAction SilentlyContinue
-if (-not $rsrcCommand) {
-    Write-Host "正在安装 rsrc 工具..." -ForegroundColor Yellow
-    go install github.com/akavel/rsrc@latest
+# 检查并安装 goversioninfo 工具
+$goversioninfoCommand = Get-Command goversioninfo -ErrorAction SilentlyContinue
+if (-not $goversioninfoCommand) {
+    Write-Host "正在安装 goversioninfo 工具..." -ForegroundColor Yellow
+    go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
     
     # 检查 GOPATH 并添加到 PATH
     $goPath = go env GOPATH
@@ -69,15 +85,15 @@ if (-not $rsrcCommand) {
         $env:PATH = "$env:PATH;$goBinPath"
     }
     
-    # 再次检查 rsrc 是否可用
-    $rsrcCommand = Get-Command rsrc -ErrorAction SilentlyContinue
-    if (-not $rsrcCommand) {
-        Write-Warning "rsrc 工具安装失败，将跳过资源文件生成"
+    # 再次检查 goversioninfo 是否可用
+    $goversioninfoCommand = Get-Command goversioninfo -ErrorAction SilentlyContinue
+    if (-not $goversioninfoCommand) {
+        Write-Warning "goversioninfo 工具安装失败，将跳过版本信息生成"
     } else {
-        Write-Host "rsrc 工具安装成功" -ForegroundColor Green
+        Write-Host "goversioninfo 工具安装成功" -ForegroundColor Green
     }
 } else {
-    Write-Host "rsrc 工具已安装" -ForegroundColor Green
+    Write-Host "goversioninfo 工具已安装" -ForegroundColor Green
 }
 
 $outputDir = "dist"
@@ -105,24 +121,24 @@ if (-not $NoBuild) {
     Write-Host "清理之前的构建..." -ForegroundColor Gray
     go clean
     
-    Write-Host "生成 Windows 资源文件..." -ForegroundColor Gray
-    if (Test-Path "icon.ico") {
-        # 检查 rsrc 是否可用，如果不可用则跳过资源文件生成
-        $rsrcCommand = Get-Command rsrc -ErrorAction SilentlyContinue
-        if ($rsrcCommand) {
-            rsrc -ico icon.ico -o rsrc.syso
-            Write-Host "已生成资源文件 rsrc.syso" -ForegroundColor Cyan
+    Write-Host "生成 Windows 资源文件（图标+版本信息+清单）..." -ForegroundColor Gray
+    $goversioninfoCommand = Get-Command goversioninfo -ErrorAction SilentlyContinue
+    if ($goversioninfoCommand) {
+        if (Test-Path "icon.ico") {
+            goversioninfo -manifest app.manifest -icon icon.ico -64 -o resource.syso versioninfo.json
         } else {
-            Write-Warning "rsrc 工具不可用，跳过资源文件生成"
+            goversioninfo -manifest app.manifest -64 -o resource.syso versioninfo.json
         }
+        Write-Host "已生成资源文件 resource.syso" -ForegroundColor Cyan
     } else {
-        Write-Warning "未找到 icon.ico 文件，将使用默认图标"
+        Write-Warning "goversioninfo 工具不可用，跳过资源文件生成"
     }
     
     Write-Host "开始构建 Windows GUI 应用..." -ForegroundColor Gray
     $buildArgs = @(
         "build",
         "-v",
+        "-trimpath",
         "-ldflags", '"-H windowsgui"',
         "-o", "$outputDir\AMMDS-Launcher.exe"
     )
