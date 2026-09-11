@@ -1,12 +1,15 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -48,6 +51,16 @@ var (
 	logFile *os.File
 
 	singletonLockFile *os.File
+)
+
+//go:embed version
+var versionBytes []byte
+
+var appVersion = strings.TrimSpace(string(versionBytes))
+
+const (
+	websiteURL = "https://github.com/QYG2297248353/AMMDS-Docker/"
+	helpURL    = "https://ammds.lifebus.top/"
 )
 
 // =============================
@@ -134,6 +147,69 @@ func getFreePort() int {
 	}
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port
+}
+
+func isPortAvailable(port int) bool {
+	l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	l.Close()
+	return true
+}
+
+func loadLastPort() int {
+	data, err := os.ReadFile(filepath.Join(getWorkDir(), "port"))
+	if err != nil {
+		return 0
+	}
+	port, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || port <= 0 || port > 65535 {
+		return 0
+	}
+	return port
+}
+
+func saveLastPort(port int) {
+	err := os.WriteFile(filepath.Join(getWorkDir(), "port"), []byte(fmt.Sprintf("%d", port)), 0644)
+	if err != nil {
+		log.Printf("Failed to save last port: %v", err)
+	}
+}
+
+// resolvePort determines the port to use with the following priority:
+// 1. AMMDS_SERVER_PORT env var (if set to a valid non-zero value)
+// 2. Port 80 (if available)
+// 3. Last used port (if available)
+// 4. A new free port from getFreePort() (saved for next reuse)
+func resolvePort() int {
+	// Priority 1: AMMDS_SERVER_PORT env var
+	if portStr := os.Getenv("AMMDS_SERVER_PORT"); portStr != "" {
+		if port, err := strconv.Atoi(portStr); err == nil && port > 0 {
+			log.Printf("Using AMMDS_SERVER_PORT env var: %d", port)
+			return port
+		}
+	}
+
+	// Priority 2: Port 80
+	if isPortAvailable(80) {
+		log.Println("Port 80 is available, using it")
+		return 80
+	}
+
+	// Priority 3: Reuse last port
+	if lastPort := loadLastPort(); lastPort > 0 {
+		if isPortAvailable(lastPort) {
+			log.Printf("Reusing last port: %d", lastPort)
+			return lastPort
+		}
+	}
+
+	// Priority 4: Get a new free port and save it for next reuse
+	port := getFreePort()
+	log.Printf("Using new free port: %d", port)
+	saveLastPort(port)
+	return port
 }
 
 func openBrowser(url string) {
@@ -431,32 +507,49 @@ func onReady() {
 	systray.SetTitle("AMMDS Launcher")
 	systray.SetTooltip("AMMDS 核心守护程序")
 
+	port := resolvePort()
+	panelURL := fmt.Sprintf("http://localhost:%d", port)
+
+	// Left-click: open panel (default behavior)
+	systray.SetOnLeftClick(func() {
+		openBrowser(panelURL)
+	})
+
+	// Group 1: 启动 / 停止 / 重启
 	mStart := systray.AddMenuItem("启动", "启动核心服务")
 	mStop := systray.AddMenuItem("停止", "停止核心服务")
 	mRestart := systray.AddMenuItem("重启", "重启核心服务")
 
 	systray.AddSeparator()
-	mData := systray.AddMenuItem("打开数据目录", "打开数据存储目录")
 
-	systray.AddSeparator()
+	// Group 2: 打开面板 / 打开目录 / 开机自启
 	mOpen := systray.AddMenuItem("打开面板", "打开 Web UI")
+	mData := systray.AddMenuItem("打开目录", "打开数据存储目录")
 
 	autoStartEnabled := isAutoStartEnabled()
 	var mAutoStart *systray.MenuItem
 	if autoStartEnabled {
-		mAutoStart = systray.AddMenuItem("禁用自动启动", "开机时不要自动启动")
+		mAutoStart = systray.AddMenuItem("开机自启 (已启用)", "点击切换开机自动启动")
 	} else {
-		mAutoStart = systray.AddMenuItem("启用自动启动", "开机时自动启动")
+		mAutoStart = systray.AddMenuItem("开机自启 (已禁用)", "点击切换开机自动启动")
 	}
 
 	systray.AddSeparator()
-	mQuit := systray.AddMenuItem("退出", "退出程序")
 
-	port := getFreePort()
+	// Group 3: 官网 / 帮助 / 版本
+	mWebsite := systray.AddMenuItem("官网", "打开官方网站")
+	mHelp := systray.AddMenuItem("帮助", "打开帮助文档")
+	mVersion := systray.AddMenuItem(fmt.Sprintf("版本: %s", appVersion), "当前版本号")
+	mVersion.Disable()
+
+	systray.AddSeparator()
+
+	// Group 4: 退出
+	mQuit := systray.AddMenuItem("退出", "退出程序")
 
 	go func() {
 		time.Sleep(3 * time.Second)
-		openBrowser(fmt.Sprintf("http://localhost:%d", port))
+		openBrowser(panelURL)
 	}()
 
 	go daemonLoop(port)
@@ -482,10 +575,10 @@ func onReady() {
 				default:
 					log.Println("Control channel is full, dropping restart command")
 				}
+			case <-mOpen.ClickedCh:
+				openBrowser(panelURL)
 			case <-mData.ClickedCh:
 				openFolder(getWorkDir())
-			case <-mOpen.ClickedCh:
-				openBrowser(fmt.Sprintf("http://localhost:%d", port))
 			case <-mAutoStart.ClickedCh:
 				currentStatus := isAutoStartEnabled()
 				if currentStatus {
@@ -493,18 +586,20 @@ func onReady() {
 					if err != nil {
 						log.Printf("Failed to disable auto start: %v", err)
 					} else {
-						mAutoStart.SetTitle("启用自动启动")
-						mAutoStart.SetTooltip("开机时自动启动")
+						mAutoStart.SetTitle("开机自启 (已禁用)")
 					}
 				} else {
 					err := setAutoStart(true)
 					if err != nil {
 						log.Printf("Failed to enable auto start: %v", err)
 					} else {
-						mAutoStart.SetTitle("禁用自动启动")
-						mAutoStart.SetTooltip("开机时不要自动启动")
+						mAutoStart.SetTitle("开机自启 (已启用)")
 					}
 				}
+			case <-mWebsite.ClickedCh:
+				openBrowser(websiteURL)
+			case <-mHelp.ClickedCh:
+				openBrowser(helpURL)
 			case <-mQuit.ClickedCh:
 				select {
 				case controlCh <- "quit":
