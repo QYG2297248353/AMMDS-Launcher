@@ -88,12 +88,10 @@ jobs:
             throw "Failed to extract ammds.exe from archive"
           }
 
-      - name: Build AMMDS Launcher
+      - name: Build AMMDS Launcher and Installer
+        shell: pwsh
         run: |
-          .\build.ps1 -Version "${{ steps.extract_version.outputs.VERSION }}" -NoInstaller
-
-      - name: Create Installer
-        run: |
+          $ErrorActionPreference = "Stop"
           .\build.ps1 -Version "${{ steps.extract_version.outputs.VERSION }}"
 
       - name: Package executables
