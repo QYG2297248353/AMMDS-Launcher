@@ -181,11 +181,9 @@ if (-not $NoBuild) {
     Write-Host "`n跳过构建步骤..." -ForegroundColor Yellow
 }
 
-if ((-not $NoBuild) -and (-not (Test-Path "$outputDir\AMMDS-Launcher.exe"))) {
+if (-not (Test-Path "$outputDir\AMMDS-Launcher.exe")) {
     Write-Error "AMMDS-Launcher.exe 文件不存在，无法创建安装包"
     exit 1
-} else {
-    Write-Host "`n跳过构建步骤..." -ForegroundColor Yellow
 }
 
 if (-not $NoInstaller) {
