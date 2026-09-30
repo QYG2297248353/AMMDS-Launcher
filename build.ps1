@@ -277,3 +277,5 @@ if (-not $NoInstaller) {
 Write-Host "`n========================================" -ForegroundColor Green
 Write-Host "构建脚本执行完毕" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
+
+exit 0
